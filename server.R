@@ -13,9 +13,11 @@ library(tidyverse)
 library(DESeq2)
 library(biomaRt)
 library(clusterProfiler)
+library(pathview)
+library(ReactomePA)
+library(enrichplot)
 library(org.Hs.eg.db)
 library(org.Mm.eg.db)
-
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output, session) {
@@ -82,7 +84,7 @@ shinyServer(function(input, output, session) {
     dds = DESeqDataSetFromMatrix(countData = x, colData = group, design = ~con)
     dds = DESeq(dds)
     res_id <<- as.data.frame(results(dds))
-    res <<- right_join(id_symbol, res_id %>% mutate(ensembl_gene_id=rownames(res_id)), by= "ensembl_gene_id")
+    res <<- right_join(id_symbol, res_id %>% mutate(ensembl_gene_id=rownames(res_id)), by= "ensembl_gene_id") %>% drop_na(ensembl_gene_id)
     output$res <- renderDataTable(res)
     
     plot1 <- ggplot(res, aes(x=log2(baseMean), y=log2FoldChange, colour=factor(padj<0.01))) +
@@ -116,6 +118,41 @@ shinyServer(function(input, output, session) {
       theme(legend.title=element_blank()) + 
       coord_cartesian(xlim=c(-8, 8), ylim=c(0, 30))
     output$vol_plot2 <- renderPlot(vol_plot2)
+    
+    # KEGG, REACTOME
+    OrgDb <<- switch(isolate(input$strain),
+                     "MMusculus" = org.Mm.eg.db,
+                     "MAuratus" = org.Mm.eg.db,
+                     "HSapiens" = org.Hs.eg.db)
+    org <<- switch(isolate(input$strain),
+                   "MMusculus" = "mouse",
+                   "MAuratus" = "mouse",
+                   "HSapiens" = "human")
+    
+    DEgene <<- res[res$padj<0.01,]
+    Upgene <<- DEgene[DEgene$log2FoldChange>0,]
+    Downgene <<- DEgene[DEgene$log2FoldChange<0,]
+    
+    #allgene.ensemmbl <- res$ensembl_gene_id
+    DEgene.ensembl <- DEgene$ensembl_gene_id
+    Upgene.ensembl <- Upgene$ensembl_gene_id
+    Downgene.ensembl <- Downgene$ensembl_gene_id
+    
+    #allgene.entrez <- bitr(allgene.ensemmbl, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = OrgDb)
+    DEgene.entrez <<- bitr(DEgene.ensembl, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = OrgDb)
+    
+    DEgene_log2expression <<- DEgene$log2FoldChange
+    names(DEgene_log2expression) <<- DEgene.entrez$ENTREZID
+    
+    kegg_res <- enrichKEGG(gene=DEgene.entrez$ENTREZID, organism=org, pAdjustMethod="BH", pvalueCutoff=0.01)
+    output$kegg_res <- renderDataTable(as.data.frame(kegg_res))
+    
+    reactome_res <- ReactomePA::enrichPathway(gene=DEgene.entrez$ENTREZID, organism=org, pAdjustMethod="BH", pvalueCutoff=0.01)
+    output$reactome_res <- renderDataTable(as.data.frame(reactome_res))
+    
+    output$reactome_dotplot <- renderPlot(dotplot(reactome_res, showCategory=15))
+    output$reactome_emapplot <- renderPlot(emapplot(pairwise_termsim(reactome_res)))
+    output$reactome_cnetplot <- renderPlot(cnetplot(reactome_res, categorySize="pvalue", foldChange=DEgene_log2expression, showCategory=8))
   })
   
   observeEvent(input$parameter_button, {
@@ -153,24 +190,28 @@ shinyServer(function(input, output, session) {
   })
   observeEvent(input$GSEA_button, {
     # GO enrichment analysis by clusteProfiler
-    DEgene <- res[res$padj<0.01,] %>% drop_na()
-    Upgene <- DEgene[DEgene$log2FoldChange>0,"external_gene_name"]
-    Downgene <- DEgene[DEgene$log2FoldChange<0,"external_gene_name"]
     
+    Upgene.symbol <- Upgene$external_gene_name
+    Downgene.symbol <- Downgene$external_gene_name
     ont = switch(isolate(input$ontology),
                  "Biological Process" = "BP",
                  "Cellular Component" = "CC",
                  "Molecular Function" = "MF")
     
-    OrgDb = switch(isolate(input$strain),
-                     "MMusculus" = org.Mm.eg.db,
-                     "MAuratus" = org.Mm.eg.db,
-                     "HSapiens" = org.Hs.eg.db)
-    
-    go_up <- enrichGO(gene=Upgene, OrgDb=OrgDb, keyType="SYMBOL",ont=ont, pAdjustMethod="BH", pvalueCutoff=0.01)
-    go_down <- enrichGO(gene=Downgene, OrgDb=OrgDb, keyType="SYMBOL",ont=ont, pAdjustMethod="BH", pvalueCutoff=0.01)
+    go_up <- enrichGO(gene=Upgene.symbol, OrgDb=OrgDb, keyType="SYMBOL",ont=ont, pAdjustMethod="BH", pvalueCutoff=0.01)
+    go_down <- enrichGO(gene=Downgene.symbol, OrgDb=OrgDb, keyType="SYMBOL",ont=ont, pAdjustMethod="BH", pvalueCutoff=0.01)
     output$go_up <- renderDataTable(as.data.frame(go_up))
     output$go_down <- renderDataTable(as.data.frame(go_down))
+  })
+  observeEvent(input$KEGGsearch_button, {
+    pathview(gene.data = DEgene_log2expression, pathway.id = input$KEGG_ID, limit = list(gene=2, cpd=1), species=org)
+    file.copy(from=paste0(input$KEGG_ID, ".pathview.png"), to=paste0("www/", input$KEGG_ID, ".pathview.png"))
+    file.remove(paste0(input$KEGG_ID, ".pathview.png"))
+    file.remove(paste0(input$KEGG_ID, ".png"))
+    file.remove(paste0(input$KEGG_ID, ".xml"))
+    output$KEGG_image <- renderUI({
+      img(src=paste0(input$KEGG_ID, ".pathview.png"))
+    })
   })
   session$onSessionEnded(function(){
     # stopApp()

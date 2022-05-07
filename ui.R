@@ -25,9 +25,6 @@ shinyUI(
           dataTableOutput(outputId = "table"),
           dataTableOutput(outputId = "test_table")
         ),
-        tabPanel("analysis",
-          dataTableOutput(outputId = "res")
-        ),
         tabPanel("MAplot",
           fluidRow(
             column(8,
@@ -47,6 +44,9 @@ shinyUI(
             )
           )
         ),
+        tabPanel("analysis",
+          dataTableOutput(outputId = "res")
+        ),
         tabPanel("GSEA",
           selectInput(inputId="ontology", label="select ontology", choices = c("Biological Process", "Cellular Component", "Molecular Function")),
           actionButton(inputId="GSEA_button", label="run"),
@@ -58,6 +58,22 @@ shinyUI(
               dataTableOutput(outputId = "go_down")
             )
           )
+        ),
+        tabPanel("KEGG",
+          dataTableOutput(outputId = "kegg_res")
+        ),
+        tabPanel("KEGG_search",
+          textInput(inputId="KEGG_ID", label="input KEGG ID", value="hsa04510"),
+          actionButton(inputId="KEGGsearch_button", label="search"),
+          uiOutput("KEGG_image")
+        ),
+        tabPanel("REACTOME",
+          dataTableOutput("reactome_res")
+        ),
+        tabPanel("REACTOME_plot",
+          plotOutput("reactome_dotplot"),
+          plotOutput("reactome_emapplot"),
+          plotOutput("reactome_cnetplot")
         )
       )
     )
