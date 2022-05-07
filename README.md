@@ -9,6 +9,7 @@ a software for RNA-seq data visualization using Shiny in R<br>
 ・shiny<br>
 ・shinyWidgets<br>
 ・tidyverse<br>
+・ggnewscale<br>
 ・DESeq2<br>
 ・biomaRt<br>
 ・clusterProfiler<br>
